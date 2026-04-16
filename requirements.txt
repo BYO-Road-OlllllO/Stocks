@@ -1,7 +1,8 @@
 streamlit
 yfinance
-pandas
+pandas>=2.0.0
 prophet
 plotly
-st-gsheets-connection
+streamlit-gsheets
 scipy
+numpy
