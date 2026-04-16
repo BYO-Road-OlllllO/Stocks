@@ -93,6 +93,48 @@ data_load_state = st.text('Loading market data...')
 data = load_data(selected_stock)
 data_load_state.text('Market data loaded successfully!')
 
+# --- NEW: Volatility & Risk Calculation Function ---
+@st.cache_data
+def calculate_risk_metrics(ticker):
+    # Fetch stock and market (SPY) data for the last year for beta calculation
+    s_data = yf.download(ticker, START_DATE, TODAY)['Close']
+    m_data = yf.download('SPY', START_DATE, TODAY)['Close']
+    
+    # Flatten columns if they are MultiIndex (common in newer yfinance versions)
+    if isinstance(s_data, pd.DataFrame): s_data = s_data.iloc[:, 0]
+    if isinstance(m_data, pd.DataFrame): m_data = m_data.iloc[:, 0]
+    
+    # Calculate daily returns
+    s_ret = s_data.pct_change().dropna()
+    m_ret = m_data.pct_change().dropna()
+    
+    # Align data and calculate Beta
+    combined = pd.concat([s_ret, m_ret], axis=1).dropna()
+    combined.columns = ['Stock', 'Market']
+    beta = combined.cov().iloc[0, 1] / combined['Market'].var()
+    volatility = combined['Stock'].std() * (252**0.5) 
+    
+    return beta, volatility
+
+# Run the calculation right after data is loaded
+try:
+    beta, vol = calculate_risk_metrics(selected_stock)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("⚠️ Risk Analysis")
+    
+    # Visual cues for risk levels
+    if beta > 1.5:
+        st.sidebar.error(f"High Volatility: {beta:.2f} Beta")
+    elif beta < 0.8:
+        st.sidebar.success(f"Low Volatility: {beta:.2f} Beta")
+    else:
+        st.sidebar.info(f"Market Neutral: {beta:.2f} Beta")
+        
+    st.sidebar.write(f"**Annual Volatility:** {vol*100:.1f}%")
+except Exception as e:
+    st.sidebar.warning("Risk metrics unavailable for this ticker.")
+    
 # Section 1: Historical Data
 st.subheader(f'Historical Market Data for {selected_stock}')
 st.dataframe(data.tail())
