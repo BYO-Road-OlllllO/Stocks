@@ -3,6 +3,6 @@ yfinance
 pandas>=2.0.0
 prophet
 plotly
-streamlit-gsheets
+st-gsheets-connection
 scipy
 numpy
