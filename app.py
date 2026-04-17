@@ -25,7 +25,7 @@ def load_portfolio_from_sheets():
         # Read the specific tab. 
         # usecols: A=0, J=9, O=14. Assuming row 1 is headers.
         df = conn.read(
-            worksheet="Stocks",
+            worksheet="1678747277",
             usecols=[0, 9, 14] 
         )
         # Rename columns so they are easy to reference
@@ -218,10 +218,15 @@ if not div_data.empty:
     if not sheet_portfolio_df.empty and selected_stock in sheet_portfolio_df["Ticker"].values:
         try:
             stock_row = sheet_portfolio_df[sheet_portfolio_df["Ticker"] == selected_stock].iloc[0]
-            shares_owned = float(stock_row['Shares'])
+            
+            # NEW FIX: Convert to text, strip out commas/spaces, then turn back to a number
+            raw_shares = str(stock_row['Shares']).replace(',', '').replace(' ', '').replace('$', '')
+            shares_owned = float(raw_shares)
+            
             using_real_shares = True
         except ValueError:
-            pass # Failsafe if the sheet has a blank or text instead of a number
+            # This will now actually tell you WHY it failed if it happens again
+            st.warning(f"Found {selected_stock} in your sheet, but couldn't read the shares. The sheet says: '{stock_row['Shares']}'")
 
     # 2. Status message for the user
     if using_real_shares:
