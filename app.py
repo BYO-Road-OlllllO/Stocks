@@ -219,11 +219,24 @@ if not div_data.empty:
         try:
             stock_row = sheet_portfolio_df[sheet_portfolio_df["Ticker"] == selected_stock].iloc[0]
             
-            # NEW FIX: Convert to text, strip out commas/spaces, then turn back to a number
+            # Convert to text and strip out commas/spaces
             raw_shares = str(stock_row['Shares']).replace(',', '').replace(' ', '').replace('$', '')
-            shares_owned = float(raw_shares)
             
-            using_real_shares = True
+            # THE FIX: If the cell was blank, Pandas calls it 'nan'. Intercept it here!
+            if raw_shares.lower() == 'nan' or raw_shares == '':
+                shares_owned = 1.0
+                using_real_shares = False
+            else:
+                shares_owned = float(raw_shares)
+                
+                # Double-check that it's not actually 0 shares
+                if shares_owned == 0.0:
+                    shares_owned = 1.0
+                    using_real_shares = False
+                else:
+                    using_real_shares = True
+                    
+        except ValueError:
         except ValueError:
             # This will now actually tell you WHY it failed if it happens again
             st.warning(f"Found {selected_stock} in your sheet, but couldn't read the shares. The sheet says: '{stock_row['Shares']}'")
