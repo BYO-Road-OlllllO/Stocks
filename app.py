@@ -5,7 +5,7 @@ from prophet import Prophet
 from prophet.plot import plot_plotly
 import plotly.graph_objs as go
 from datetime import date
-from streamlit_gsheets import GSheetsConnection # NEW: Import for Google Sheets
+from streamlit_gsheets import GSheetsConnection 
 
 # Set the timeframe for historical data
 START_DATE = "2024-01-01"
@@ -15,7 +15,7 @@ TODAY = date.today().strftime("%Y-%m-%d")
 st.set_page_config(page_title="Portfolio Tracker & Projector", layout="wide")
 st.title('📈 Portfolio Tracker & Market Projector')
 
-# --- NEW: Google Sheets Integration ---
+# --- Google Sheets Integration ---
 # Create a connection object
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -52,7 +52,7 @@ all_tickers = sorted(list(set(base_portfolio + sheet_tickers)))
 # --- Sidebar controls ---
 st.sidebar.header("Configuration")
 
-# NEW: Allow user to manually type an additional stock ticker
+# Allow user to manually type an additional stock ticker
 custom_ticker = st.sidebar.text_input("Add a custom ticker (e.g., AAPL):").upper().strip()
 if custom_ticker and custom_ticker not in all_tickers:
     all_tickers.append(custom_ticker)
@@ -61,7 +61,7 @@ if custom_ticker and custom_ticker not in all_tickers:
 # Dropdown uses the newly merged list
 selected_stock = st.sidebar.selectbox('Select an asset to view:', all_tickers)
 
-# NEW: Display Google Sheets position data if the selected stock is in the sheet
+# Display Google Sheets position data if the selected stock is in the sheet
 if not sheet_portfolio_df.empty and selected_stock in sheet_portfolio_df["Ticker"].values:
     # Get the row for the selected stock
     stock_info = sheet_portfolio_df[sheet_portfolio_df["Ticker"] == selected_stock].iloc[0]
@@ -89,11 +89,23 @@ def load_data(ticker):
     data.reset_index(inplace=True)
     return data
 
+# --- NEW: Dividend Fetching Function ---
+@st.cache_data
+def load_dividend_data(ticker_symbol):
+    ticker = yf.Ticker(ticker_symbol)
+    divs = ticker.dividends
+    if not divs.empty:
+        # Remove timezone information to make filtering easier
+        divs.index = divs.index.tz_localize(None) 
+        divs = divs[(divs.index >= pd.to_datetime(START_DATE)) & (divs.index <= pd.to_datetime(TODAY))]
+    return divs
+
 data_load_state = st.text('Loading market data...')
 data = load_data(selected_stock)
+div_data = load_dividend_data(selected_stock) # NEW: Call the dividend fetcher
 data_load_state.text('Market data loaded successfully!')
 
-# --- NEW: Volatility & Risk Calculation Function ---
+# --- Volatility & Risk Calculation Function ---
 @st.cache_data
 def calculate_risk_metrics(ticker):
     # Fetch stock and market (SPY) data for the last year for beta calculation
@@ -192,3 +204,57 @@ st.plotly_chart(fig1, use_container_width=True)
 st.write("**Projection Components (Overall Trend vs. Yearly/Weekly Seasonality):**")
 fig2 = m.plot_components(forecast)
 st.pyplot(fig2)
+
+
+# --- NEW: Section 3: Dividend Tracking & Projections ---
+st.markdown("---")
+st.subheader(f'💰 Dividend Tracking for {selected_stock}')
+
+if not div_data.empty:
+    # Plot Historical Dividends
+    st.write("**Historical Dividend Payouts**")
+    fig_div = go.Figure(data=[go.Bar(x=div_data.index, y=div_data.values, name="Dividends Paid", marker_color='#2ca02c')])
+    fig_div.layout.update(title_text='Dividends Paid Over Time', yaxis_title="Amount per Share ($)")
+    st.plotly_chart(fig_div, use_container_width=True)
+
+    # Calculate Annual Dividends for Projections
+    annual_divs = div_data.resample('YE').sum() 
+    
+    # Exclude the current year from the growth calculation if incomplete
+    last_full_year = date.today().year - 1
+    annual_divs_full = annual_divs[annual_divs.index.year <= last_full_year]
+
+    if len(annual_divs_full) >= 2:
+        # Calculate Compound Annual Growth Rate (CAGR)
+        start_val = annual_divs_full.iloc[0]
+        end_val = annual_divs_full.iloc[-1]
+        years_diff = len(annual_divs_full) - 1
+        
+        if start_val > 0:
+            cagr = (end_val / start_val) ** (1/years_diff) - 1
+        else:
+            cagr = 0
+
+        # Project Future Dividends
+        st.write(f"**Projected Annual Dividends ({n_years} Years)**")
+        st.write(f"*Historical Dividend Growth Rate:* **{cagr:.2%}**")
+        st.caption("*(Projections assume the company will continue raising dividends at its historical average rate.)*")
+        
+        # Calculate the next N years based on the last full year's payout
+        future_years = [date.today().year + i for i in range(1, n_years + 1)]
+        proj_divs = [end_val * ((1 + cagr) ** i) for i in range(1, n_years + 1)]
+
+        fig_proj_div = go.Figure(data=[go.Bar(
+            x=future_years, 
+            y=proj_divs, 
+            name="Projected Dividends", 
+            marker_color='#98df8a',
+            text=[f"${val:.2f}" for val in proj_divs],
+            textposition='auto'
+        )])
+        fig_proj_div.layout.update(title_text='Projected Total Annual Payout per Share', xaxis_title="Year", yaxis_title="Estimated Amount ($)")
+        st.plotly_chart(fig_proj_div, use_container_width=True)
+    else:
+        st.info("Not enough historical full-year data to accurately project future dividend growth.")
+else:
+    st.info(f"{selected_stock} does not currently pay a dividend, or dividend data is unavailable for the selected timeframe.")
