@@ -228,12 +228,22 @@ if not div_data.empty:
         # Calculate Compound Annual Growth Rate (CAGR)
         start_val = annual_divs_full.iloc[0]
         end_val = annual_divs_full.iloc[-1]
+        
+        # Safely force the values to be standard numbers to prevent pandas errors
+        if isinstance(start_val, pd.Series):
+            start_val = start_val.iloc[0]
+        if isinstance(end_val, pd.Series):
+            end_val = end_val.iloc[0]
+            
+        start_val = float(start_val)
+        end_val = float(end_val)
+        
         years_diff = len(annual_divs_full) - 1
         
-        if start_val > 0:
+        if start_val > 0.0:
             cagr = (end_val / start_val) ** (1/years_diff) - 1
         else:
-            cagr = 0
+            cagr = 0.0
 
         # Project Future Dividends
         st.write(f"**Projected Annual Dividends ({n_years} Years)**")
