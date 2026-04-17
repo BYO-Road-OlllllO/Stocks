@@ -206,21 +206,31 @@ fig2 = m.plot_components(forecast)
 st.pyplot(fig2)
 
 
-# --- NEW: Section 3: Dividend Tracking & Projections ---
+# --- NEW: Section 3: Total Dividend Tracking & Projections ---
 st.markdown("---")
-st.subheader(f'💰 Dividend Tracking for {selected_stock}')
+st.subheader(f'💰 Dividend Income for {selected_stock}')
 
 if not div_data.empty:
-    # Plot Historical Dividends
-    st.write("**Historical Dividend Payouts**")
-    fig_div = go.Figure(data=[go.Bar(x=div_data.index, y=div_data.values, name="Dividends Paid", marker_color='#2ca02c')])
-    fig_div.layout.update(title_text='Dividends Paid Over Time', yaxis_title="Amount per Share ($)")
-    st.plotly_chart(fig_div, use_container_width=True)
-
-    # Calculate Annual Dividends for Projections
-    annual_divs = div_data.resample('YE').sum() 
+    # 1. Grab the number of shares from your Google Sheet (Default to 1 if not found)
+    shares_owned = 1.0
+    using_real_shares = False
     
-    # Exclude the current year from the growth calculation if incomplete
+    if not sheet_portfolio_df.empty and selected_stock in sheet_portfolio_df["Ticker"].values:
+        try:
+            stock_row = sheet_portfolio_df[sheet_portfolio_df["Ticker"] == selected_stock].iloc[0]
+            shares_owned = float(stock_row['Shares'])
+            using_real_shares = True
+        except ValueError:
+            pass # Failsafe if the sheet has a blank or text instead of a number
+
+    # 2. Status message for the user
+    if using_real_shares:
+        st.success(f"Calculations based on your actual holdings: **{shares_owned} shares** (Synced from Google Sheets)")
+    else:
+        st.info("Stock not found in Google Sheets. Showing default payout per 1 share.")
+
+    # Calculate Annual Dividends
+    annual_divs = div_data.resample('YE').sum() 
     last_full_year = date.today().year - 1
     annual_divs_full = annual_divs[annual_divs.index.year <= last_full_year]
 
@@ -229,42 +239,37 @@ if not div_data.empty:
         start_val = annual_divs_full.iloc[0]
         end_val = annual_divs_full.iloc[-1]
         
-        # Safely force the values to be standard numbers to prevent pandas errors
-        if isinstance(start_val, pd.Series):
-            start_val = start_val.iloc[0]
-        if isinstance(end_val, pd.Series):
-            end_val = end_val.iloc[0]
-            
-        start_val = float(start_val)
-        end_val = float(end_val)
+        # Safely force standard numbers
+        if isinstance(start_val, pd.Series): start_val = start_val.iloc[0]
+        if isinstance(end_val, pd.Series): end_val = end_val.iloc[0]
+        start_val, end_val = float(start_val), float(end_val)
         
         years_diff = len(annual_divs_full) - 1
-        
-        if start_val > 0.0:
-            cagr = (end_val / start_val) ** (1/years_diff) - 1
-        else:
-            cagr = 0.0
+        cagr = ((end_val / start_val) ** (1/years_diff) - 1) if start_val > 0.0 else 0.0
 
-        # Project Future Dividends
-        st.write(f"**Projected Annual Dividends ({n_years} Years)**")
+        # Project Future Dividends & MULTIPLY BY SHARES OWNED
+        st.write(f"**Projected Annual Cash Flow ({n_years} Years)**")
         st.write(f"*Historical Dividend Growth Rate:* **{cagr:.2%}**")
-        st.caption("*(Projections assume the company will continue raising dividends at its historical average rate.)*")
         
-        # Calculate the next N years based on the last full year's payout
         future_years = [date.today().year + i for i in range(1, n_years + 1)]
-        proj_divs = [end_val * ((1 + cagr) ** i) for i in range(1, n_years + 1)]
+        # Multiply the projected per-share dividend by your total shares
+        proj_divs_total = [(end_val * ((1 + cagr) ** i)) * shares_owned for i in range(1, n_years + 1)]
 
         fig_proj_div = go.Figure(data=[go.Bar(
             x=future_years, 
-            y=proj_divs, 
-            name="Projected Dividends", 
+            y=proj_divs_total, 
+            name="Projected Cash Income", 
             marker_color='#98df8a',
-            text=[f"${val:.2f}" for val in proj_divs],
+            text=[f"${val:,.2f}" for val in proj_divs_total],
             textposition='auto'
         )])
-        fig_proj_div.layout.update(title_text='Projected Total Annual Payout per Share', xaxis_title="Year", yaxis_title="Estimated Amount ($)")
+        fig_proj_div.layout.update(
+            title_text=f'Projected Total Cash Income from {selected_stock}', 
+            xaxis_title="Year", 
+            yaxis_title="Total Estimated Cash Payout ($)"
+        )
         st.plotly_chart(fig_proj_div, use_container_width=True)
     else:
         st.info("Not enough historical full-year data to accurately project future dividend growth.")
 else:
-    st.info(f"{selected_stock} does not currently pay a dividend, or dividend data is unavailable for the selected timeframe.")
+    st.info(f"{selected_stock} does not currently pay a dividend, or dividend data is unavailable.")
