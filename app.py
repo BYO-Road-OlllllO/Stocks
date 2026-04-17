@@ -237,15 +237,15 @@ if not div_data.empty:
                     using_real_shares = True
                     
         except ValueError:
-        except ValueError:
-            # This will now actually tell you WHY it failed if it happens again
-            st.warning(f"Found {selected_stock} in your sheet, but couldn't read the shares. The sheet says: '{stock_row['Shares']}'")
+            # Failsafe if the sheet has weird text that cannot be converted to a float
+            shares_owned = 1.0
+            using_real_shares = False
 
     # 2. Status message for the user
     if using_real_shares:
         st.success(f"Calculations based on your actual holdings: **{shares_owned} shares** (Synced from Google Sheets)")
     else:
-        st.info("Stock not found in Google Sheets. Showing default payout per 1 share.")
+        st.info("Stock not found in Google Sheets, or shares listed as 0/blank. Showing default payout per 1 share.")
 
     # Calculate Annual Dividends
     annual_divs = div_data.resample('YE').sum() 
