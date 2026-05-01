@@ -6,6 +6,7 @@ from prophet.plot import plot_plotly
 import plotly.graph_objs as go
 from datetime import date
 from streamlit_gsheets import GSheetsConnection 
+import requests # NEW: Required for sending mobile push notifications
 
 # Set the timeframe for historical data
 START_DATE = "2024-01-01"
@@ -61,6 +62,50 @@ if custom_ticker and custom_ticker not in all_tickers:
 # Dropdown uses the newly merged list
 selected_stock = st.sidebar.selectbox('Select an asset to view:', all_tickers)
 
+# --- NEW: Portfolio Alert System ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔔 Mobile Alerts")
+if st.sidebar.button("Run Portfolio Alert Check"):
+    if sheet_portfolio_df.empty:
+        st.sidebar.warning("No portfolio data found in Google Sheets.")
+    else:
+        with st.sidebar.status("Checking portfolio...", expanded=True) as status:
+            alerts_sent = 0
+            for index, row in sheet_portfolio_df.iterrows():
+                ticker = row['Ticker']
+                try:
+                    # Clean the cost basis data in case of weird formatting in sheets
+                    raw_cost = str(row['Cost_Per_Share']).replace('$', '').replace(',', '').strip()
+                    if raw_cost.lower() == 'nan' or raw_cost == '':
+                        continue # Skip if no purchase price is listed
+                    
+                    purchase_price = float(raw_cost)
+                    
+                    # Fetch fast live price
+                    stock_obj = yf.Ticker(ticker)
+                    live_price = stock_obj.fast_info['last_price']
+                    
+                    # Check condition
+                    if live_price < purchase_price:
+                        # Send the alert
+                        topic = "thom-portfolio-alerts-2026"
+                        message = f"Alert: {ticker} dropped to ${live_price:.2f} (Below your cost basis of ${purchase_price:.2f})"
+                        
+                        requests.post(f"https://ntfy.sh/{topic}",
+                                      data=message.encode(encoding='utf-8'),
+                                      headers={
+                                          "Title": f"Portfolio Alert: {ticker}",
+                                          "Priority": "high",
+                                          "Tags": "chart_with_downwards_trend,warning"
+                                      })
+                        alerts_sent += 1
+                        st.write(f"Alert sent for {ticker}")
+                
+                except Exception as e:
+                    st.write(f"Skipped {ticker} due to data error.")
+            
+            status.update(label=f"Check complete! {alerts_sent} alerts sent.", state="complete", expanded=False)
+
 # Display Google Sheets position data if the selected stock is in the sheet
 if not sheet_portfolio_df.empty and selected_stock in sheet_portfolio_df["Ticker"].values:
     # Get the row for the selected stock
@@ -73,7 +118,7 @@ if not sheet_portfolio_df.empty and selected_stock in sheet_portfolio_df["Ticker
     
     # Optional: Calculate total cost basis
     try:
-        total_cost = float(stock_info['Shares']) * float(stock_info['Cost_Per_Share'])
+        total_cost = float(stock_info['Shares']) * float(str(stock_info['Cost_Per_Share']).replace('$', '').replace(',', ''))
         st.sidebar.write(f"**Total Cost Basis:** ${total_cost:,.2f}")
     except ValueError:
         pass # Silently pass if the sheet contains non-numeric data in those columns
@@ -89,7 +134,7 @@ def load_data(ticker):
     data.reset_index(inplace=True)
     return data
 
-# --- NEW: Dividend Fetching Function ---
+# Dividend Fetching Function
 @st.cache_data
 def load_dividend_data(ticker_symbol):
     ticker = yf.Ticker(ticker_symbol)
@@ -102,7 +147,7 @@ def load_dividend_data(ticker_symbol):
 
 data_load_state = st.text('Loading market data...')
 data = load_data(selected_stock)
-div_data = load_dividend_data(selected_stock) # NEW: Call the dividend fetcher
+div_data = load_dividend_data(selected_stock)
 data_load_state.text('Market data loaded successfully!')
 
 # --- Volatility & Risk Calculation Function ---
@@ -206,7 +251,7 @@ fig2 = m.plot_components(forecast)
 st.pyplot(fig2)
 
 
-# --- NEW: Section 3: Total Dividend Tracking & Projections ---
+# --- Section 3: Total Dividend Tracking & Projections ---
 st.markdown("---")
 st.subheader(f'💰 Dividend Income for {selected_stock}')
 
