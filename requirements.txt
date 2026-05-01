@@ -1,8 +1,9 @@
-streamlit
-yfinance
-pandas>=2.0.0
-prophet
-plotly
-st-gsheets-connection
+streamlit==1.31.0
+yfinance==0.2.36
+pandas==2.2.0
+prophet==1.1.5
+plotly==5.18.0
+st-gsheets-connection==1.0.1
 scipy
 numpy
+requests==2.31.0
