@@ -25,7 +25,6 @@ def load_portfolio_from_sheets():
         # Read the specific tab. 
         # usecols: A=0, J=9, O=14. Assuming row 1 is headers.
         df = conn.read(
-            worksheet="1678747277",
             usecols=[0, 9, 14] 
         )
         # Rename columns so they are easy to reference
